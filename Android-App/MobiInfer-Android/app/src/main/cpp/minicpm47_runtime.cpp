@@ -179,11 +179,14 @@ MiniCPM47Runtime::MiniCPM47Runtime(const std::string & model, const std::string 
         if (__system_property_get("debug.moe.cache", v) > 0) {
             benchmark_cache_slots = std::max(8, std::min(128, atoi(v)));
         }
+        if (__system_property_get("debug.moe.dspark", v) > 0) {
+            impl->dspark = atoi(v) != 0;
+        }
         if (__system_property_get("debug.moe.ubatch", v) > 0) {
             benchmark_ubatch = std::max(1, std::min(memory.batch, atoi(v)));
         }
-        LOGi("MiniCPM47 override: vision_htp=%d bank=%d cache=%d ubatch=%d",
-             (int) impl->vision_htp, benchmark_bank, benchmark_cache_slots, benchmark_ubatch);
+        LOGi("MiniCPM47 override: vision_htp=%d dspark=%d bank=%d cache=%d ubatch=%d",
+             (int) impl->vision_htp, (int) impl->dspark, benchmark_bank, benchmark_cache_slots, benchmark_ubatch);
     }
 #endif
 
@@ -601,3 +604,4 @@ std::array<double, 5> MiniCPM47Runtime::performanceStats() const {
 bool MiniCPM47Runtime::contextTruncated() const {
     return impl->context_truncated;
 }
+

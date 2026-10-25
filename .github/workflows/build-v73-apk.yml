@@ -34,8 +34,13 @@ jobs:
           mkdir -p x
           (cd x && unzip -q ../base.apk)
           cp src/build-snapdragon/ggml/src/ggml-hexagon/libggml-htp-v73.so x/lib/arm64-v8a/
+          rm -f x/META-INF/*.RSA x/META-INF/*.SF x/META-INF/*.MF
           ls -l x/lib/arm64-v8a/ | grep htp
-          (cd x && zip -q -r -X ../patched.apk . -x 'META-INF/*')
+          (cd x && zip -q -r -X ../patched.apk .)
+          # Android 11+ requires resources.arsc to be STORED (uncompressed)
+          (cd x && zip -q -X -0 ../patched.apk resources.arsc)
+          unzip -v patched.apk resources.arsc
+          unzip -l patched.apk | grep -c "lib/arm64-v8a/" || true
 
       - name: Align and sign
         run: |

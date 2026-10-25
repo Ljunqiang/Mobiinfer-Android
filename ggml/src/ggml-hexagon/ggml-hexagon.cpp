@@ -10195,8 +10195,13 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
         if (arch_limit > 0) {
             opt_arch = arch_limit;
         }
-        GGML_LOG_INFO("ggml-hex: override arch=v%d mm=%d fa=%d gdn=%d nhmx=%d nhvx=%zu verbose=%d\n",
-                      opt_arch, opt_mm_select, opt_fa_select, opt_gdn_select, opt_nhmx, opt_nhvx, opt_verbose);
+        const int vmem_mb = prop_i("debug.hex.vmem_mb", 0);
+        if (vmem_mb > 0) {
+            opt_vmem = (size_t) vmem_mb * 1024 * 1024;
+        }
+        GGML_LOG_INFO("ggml-hex: override arch=v%d mm=%d fa=%d gdn=%d nhmx=%d nhvx=%zu vmem=%zuMB verbose=%d\n",
+                      opt_arch, opt_mm_select, opt_fa_select, opt_gdn_select, opt_nhmx, opt_nhvx,
+                      opt_vmem / (1024 * 1024), opt_verbose);
     }
 #endif
 

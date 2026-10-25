@@ -46,10 +46,10 @@ jobs:
         run: |
           set -eux
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"
-          keytool -genkeypair -keystore ks.jks -storepass android -keypass android \
-            -alias v73 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=MobiInfer v73"
+          base64 -d src/ci/keystore.b64 > ks.p12
+          ls -l ks.p12
           "$BT/zipalign" -f 4 patched.apk aligned.apk
-          "$BT/apksigner" sign --ks ks.jks --ks-pass pass:android --key-pass pass:android \
+          "$BT/apksigner" sign --ks ks.p12 --ks-pass pass:android --key-pass pass:android \
             --out MobiInfer-Android-v0.3-v73dbg.apk aligned.apk
           "$BT/apksigner" verify --print-certs MobiInfer-Android-v0.3-v73dbg.apk
           sha256sum MobiInfer-Android-v0.3-v73dbg.apk
@@ -61,4 +61,5 @@ jobs:
           retention-days: 14
           path: |
             MobiInfer-Android-v0.3-v73dbg.apk
+
 

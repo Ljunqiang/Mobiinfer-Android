@@ -1,0 +1,14 @@
+name: probe-host-ndk
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List preinstalled NDKs
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -1 "$ANDROID_HOME/ndk" || true
+          ls -1 "$ANDROID_SDK_ROOT/ndk" 2>/dev/null || true
+          which cmake ninja
+          cmake --version | head -1

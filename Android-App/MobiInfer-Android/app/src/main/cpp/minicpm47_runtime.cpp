@@ -14,6 +14,10 @@
 #include <stdexcept>
 #include <mutex>
 
+#if defined(__ANDROID__)
+#    include <sys/system_properties.h>
+#endif
+
 // Defined in llama_jni.cpp: number of HTP sessions the device exposes
 // (1 on single-NSP SoCs, 2 where a second NSP is available).
 extern "C" int mobiinfer_htp_session_count();
@@ -156,10 +160,36 @@ MiniCPM47Runtime::MiniCPM47Runtime(const std::string & model, const std::string 
             throw std::invalid_argument("Benchmark prefetch must be 0..16 and io_threads 1..8");
         }
     }
+#if defined(__ANDROID__)
+    // Local test overrides (system properties), applied after runtime.json so
+    // that older Hexagon SoCs with a small DSP mapping window can be probed
+    // without rebuilding the app:
+    //   adb shell setprop debug.moe.vision 0   (vision tower on CPU)
+    //   adb shell setprop debug.moe.bank 8     (expert bank slots)
+    //   adb shell setprop debug.moe.cache 8    (decode window slots)
+    {
+        char v[PROP_VALUE_MAX] = {0};
+        if (__system_property_get("debug.moe.vision", v) > 0) {
+            impl->vision_htp = atoi(v) != 0;
+        }
+        if (__system_property_get("debug.moe.bank", v) > 0) {
+            benchmark_bank = std::max(8, std::min(256, atoi(v)));
+            benchmark_ubatch = std::min(benchmark_ubatch, std::max(1, benchmark_bank / 8));
+        }
+        if (__system_property_get("debug.moe.cache", v) > 0) {
+            benchmark_cache_slots = std::max(8, std::min(128, atoi(v)));
+        }
+        if (__system_property_get("debug.moe.ubatch", v) > 0) {
+            benchmark_ubatch = std::max(1, std::min(memory.batch, atoi(v)));
+        }
+        LOGi("MiniCPM47 override: vision_htp=%d bank=%d cache=%d ubatch=%d",
+             (int) impl->vision_htp, benchmark_bank, benchmark_cache_slots, benchmark_ubatch);
+    }
+#endif
+
     if (benchmark_bank < 256 && benchmark_ubatch > benchmark_bank / 8) {
         throw std::invalid_argument("MiniCPM47 ubatch exceeds the expert bank capacity");
-    }
-    if (cfg_batch < 0 || (cfg_batch > 0 && cfg_batch < benchmark_ubatch)) {
+    }    if (cfg_batch < 0 || (cfg_batch > 0 && cfg_batch < benchmark_ubatch)) {
         throw std::invalid_argument("Benchmark batch must be >= ubatch");
     }
     // Keep the total decode window within the selected memory budget when

@@ -160,6 +160,7 @@ MiniCPM47Runtime::MiniCPM47Runtime(const std::string & model, const std::string 
             throw std::invalid_argument("Benchmark prefetch must be 0..16 and io_threads 1..8");
         }
     }
+    bool draft_on_cpu = false;
 #if defined(__ANDROID__)
     // Local test overrides (system properties), applied after runtime.json so
     // that older Hexagon SoCs with a small DSP mapping window can be probed
@@ -169,6 +170,12 @@ MiniCPM47Runtime::MiniCPM47Runtime(const std::string & model, const std::string 
     //   adb shell setprop debug.moe.cache 8    (decode window slots)
     {
         char v[PROP_VALUE_MAX] = {0};
+        char soc_model[PROP_VALUE_MAX] = {0};
+        __system_property_get("ro.soc.model", soc_model);
+        // Hexagon v73 parts (SM8550, 8 Gen 2) only get a 32-bit DSP mapping
+        // window, so the DSpark draft model cannot be mapped next to the 35B
+        // weights. Keep it off unless explicitly requested.
+        const bool small_dsp = std::string(soc_model).rfind("SM8550", 0) == 0;
         if (__system_property_get("debug.moe.vision", v) > 0) {
             impl->vision_htp = atoi(v) != 0;
         }
@@ -181,18 +188,31 @@ MiniCPM47Runtime::MiniCPM47Runtime(const std::string & model, const std::string 
         }
         if (__system_property_get("debug.moe.dspark", v) > 0) {
             impl->dspark = atoi(v) != 0;
+        } else if (small_dsp) {
+            impl->dspark = false;
         }
         if (__system_property_get("debug.moe.ubatch", v) > 0) {
             benchmark_ubatch = std::max(1, std::min(memory.batch, atoi(v)));
         }
-        LOGi("MiniCPM47 override: vision_htp=%d dspark=%d bank=%d cache=%d ubatch=%d",
-             (int) impl->vision_htp, (int) impl->dspark, benchmark_bank, benchmark_cache_slots, benchmark_ubatch);
+        if (__system_property_get("debug.moe.io_threads", v) > 0) {
+            io_threads = std::max(1, std::min(8, atoi(v)));
+        }
+        if (__system_property_get("debug.moe.prefetch", v) > 0) {
+            prefetch = std::max(0, std::min(16, atoi(v)));
+        }
+        if (__system_property_get("debug.moe.draft_cpu", v) > 0) {
+            draft_on_cpu = atoi(v) != 0;
+        }
+        LOGi("MiniCPM47 override: soc=%s vision_htp=%d dspark=%d bank=%d cache=%d ubatch=%d io=%d prefetch=%d draft_cpu=%d",
+             soc_model, (int) impl->vision_htp, (int) impl->dspark, benchmark_bank,
+             benchmark_cache_slots, benchmark_ubatch, io_threads, prefetch, (int) draft_on_cpu);
     }
 #endif
 
     if (benchmark_bank < 256 && benchmark_ubatch > benchmark_bank / 8) {
         throw std::invalid_argument("MiniCPM47 ubatch exceeds the expert bank capacity");
-    }    if (cfg_batch < 0 || (cfg_batch > 0 && cfg_batch < benchmark_ubatch)) {
+    }
+    if (cfg_batch < 0 || (cfg_batch > 0 && cfg_batch < benchmark_ubatch)) {
         throw std::invalid_argument("Benchmark batch must be >= ubatch");
     }
     // Keep the total decode window within the selected memory budget when
@@ -296,7 +316,7 @@ MiniCPM47Runtime::MiniCPM47Runtime(const std::string & model, const std::string 
             LOGi("MiniCPM47 runtime: speculative type = %s",
                  common_speculative_type_to_str(spec_type).c_str());
             p.speculative.draft.mparams.path = draft_path;
-            p.speculative.draft.n_gpu_layers = 99;
+            p.speculative.draft.n_gpu_layers = draft_on_cpu ? 0 : 99;
             p.speculative.draft.devices = p.devices;
             // DFlash is fastest at n_max=5; DSpark keeps the memory-config value.
             const int default_n_max = spec_type == COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH
@@ -604,4 +624,5 @@ std::array<double, 5> MiniCPM47Runtime::performanceStats() const {
 bool MiniCPM47Runtime::contextTruncated() const {
     return impl->context_truncated;
 }
+
 

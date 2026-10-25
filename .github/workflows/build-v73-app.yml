@@ -43,6 +43,16 @@ jobs:
               && cmake --build build-app --target mobiinfer -j\$(nproc)"
           find build-app -name "libmobiinfer.so" -exec ls -l {} \;
 
+      - name: Build Hexagon v73 skel
+        working-directory: src
+        run: |
+          set -eux
+          cp docs/backend/snapdragon/CMakeUserPresets.json .
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace \
+            --platform linux/amd64 ghcr.io/snapdragon-toolchain/arm64-android:v0.8 \
+            bash -lc 'cmake --preset arm64-android-snapdragon-release -B build-snapdragon -DGGML_OPENCL=OFF && cmake --build build-snapdragon --target htp-v73 -j"$(nproc)"'
+          ls -l build-snapdragon/ggml/src/ggml-hexagon/libggml-htp-v73.so
+
       - name: Patch official v0.3 APK with new libmobiinfer.so
         run: |
           set -eux
@@ -52,7 +62,8 @@ jobs:
           (cd x && unzip -q ../base.apk)
           NEW=$(find src/build-app -name libmobiinfer.so | head -1)
           cp "$NEW" x/lib/arm64-v8a/libmobiinfer.so
-          ls -l x/lib/arm64-v8a/libmobiinfer.so
+          cp src/build-snapdragon/ggml/src/ggml-hexagon/libggml-htp-v73.so x/lib/arm64-v8a/
+          ls -l x/lib/arm64-v8a/libmobiinfer.so x/lib/arm64-v8a/libggml-htp-v73.so
           rm -f x/META-INF/*.RSA x/META-INF/*.SF x/META-INF/*.MF
           (cd x && zip -q -r -X ../patched.apk .)
           (cd x && zip -q -X -0 ../patched.apk resources.arsc)

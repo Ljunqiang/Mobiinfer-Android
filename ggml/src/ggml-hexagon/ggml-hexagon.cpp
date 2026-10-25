@@ -51,6 +51,10 @@
 #include <dspqueue.h>
 #include <rpcmem.h>
 
+#if defined(__ANDROID__)
+#    include <sys/system_properties.h>
+#endif
+
 #define GGML_COMMON_IMPL_CPP
 #include "ggml-backend-impl.h"
 #include "ggml-alloc.h"
@@ -10167,6 +10171,34 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
     }
     opt_vmem    = str_vmem    ? parse_size(str_vmem)   : opt_vmem;
     opt_hostbuf = str_hostbuf ? atoi(str_hostbuf) != 0 : opt_hostbuf;
+
+#if defined(__ANDROID__)
+    // Local debug overrides (system properties), applied after env parsing so that
+    // a re-signed build can be re-configured without rebuilding:
+    //   adb shell setprop debug.hex.gdn 0   (then force-stop and relaunch the app)
+    {
+        auto prop_i = [](const char * name, int def) {
+            char v[PROP_VALUE_MAX] = {0};
+            return __system_property_get(name, v) > 0 ? atoi(v) : def;
+        };
+        opt_mm_select      = prop_i("debug.hex.mm",       opt_mm_select);
+        opt_fa_select      = prop_i("debug.hex.fa",       opt_fa_select);
+        opt_gdn_select     = prop_i("debug.hex.gdn",      opt_gdn_select);
+        opt_nhmx           = prop_i("debug.hex.nhmx",     opt_nhmx);
+        opt_opfusion       = prop_i("debug.hex.opfusion", opt_opfusion);
+        opt_verbose        = prop_i("debug.hex.verbose",  opt_verbose);
+        const int nhvx     = prop_i("debug.hex.nhvx",     0);
+        if (nhvx > 0) {
+            opt_nhvx = (size_t) nhvx;
+        }
+        const int arch_limit = prop_i("debug.hex.arch", 0);
+        if (arch_limit > 0) {
+            opt_arch = arch_limit;
+        }
+        GGML_LOG_INFO("ggml-hex: override arch=v%d mm=%d fa=%d gdn=%d nhmx=%d nhvx=%zu verbose=%d\n",
+                      opt_arch, opt_mm_select, opt_fa_select, opt_gdn_select, opt_nhmx, opt_nhvx, opt_verbose);
+    }
+#endif
 
     // Parse device configuration
     const char * str_devices  = getenv("GGML_HEXAGON_DEVICES");

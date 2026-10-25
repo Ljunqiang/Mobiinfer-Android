@@ -103,6 +103,8 @@ struct ggml_hexagon_device_config {
 static ggml_hexagon_device_config opt_device_configs[GGML_HEXAGON_MAX_SESSIONS];
 
 static int    opt_arch    = 0; // autodetect
+static size_t g_hex_mapped_total = 0;
+static int    opt_maplog  = 0; // log every successful buffer mapping
 static size_t opt_ndev    = 1;
 static size_t opt_nhvx    = 0; // use all
 static int    opt_nhmx    = 1; // when set, enable HMX; when 0, use HVX only
@@ -743,9 +745,16 @@ struct ggml_hexagon_shared_buffer {
 
         int err = fastrpc_mmap(sess->domain_id, fd(), (void *) base(), 0, size(), flags);
         if (err != 0) {
-            GGML_LOG_ERROR("ggml-hex: %s buffer mapping failed : domain_id %d size %zu fd %d error 0x%08x\n", sess->c_name(),
-                    sess->domain_id, size(), fd(), (unsigned) err);
+            GGML_LOG_ERROR("ggml-hex: %s buffer mapping failed : domain_id %d size %zu fd %d error 0x%08x "
+                           "pinned %d extended %d mapped_total %zu\n", sess->c_name(),
+                    sess->domain_id, size(), fd(), (unsigned) err, (int) pinned, (int) extended, g_hex_mapped_total);
             throw std::runtime_error("ggml-hex: fastrpc_mmap failed (see log for details)");
+        }
+
+        g_hex_mapped_total += size();
+        if (opt_maplog) {
+            GGML_LOG_INFO("ggml-hex: %s map ok : base %p size %zu fd %d pinned %d extended %d mapped_total %zu\n",
+                    sess->c_name(), (void *) base(), size(), fd(), (int) pinned, (int) extended, g_hex_mapped_total);
         }
 
         HEX_VERBOSE("ggml-hex: %s mapped buffer: base %p size %zu fd %d pinned %u extended %u\n",
@@ -764,6 +773,9 @@ struct ggml_hexagon_shared_buffer {
 
         if (mem) {
             fastrpc_munmap(sess->domain_id, fd(), (void *) base(), size());
+            if (g_hex_mapped_total >= size()) {
+                g_hex_mapped_total -= size();
+            }
         }
 
         HEX_VERBOSE("ggml-hex: %s unmapped buffer: base %p size %zu fd %d\n", sess->c_name(),
@@ -10187,6 +10199,7 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
         opt_nhmx           = prop_i("debug.hex.nhmx",     opt_nhmx);
         opt_opfusion       = prop_i("debug.hex.opfusion", opt_opfusion);
         opt_verbose        = prop_i("debug.hex.verbose",  opt_verbose);
+        opt_maplog         = prop_i("debug.hex.maplog",   opt_maplog);
         const int nhvx     = prop_i("debug.hex.nhvx",     0);
         if (nhvx > 0) {
             opt_nhvx = (size_t) nhvx;
@@ -10449,3 +10462,4 @@ ggml_backend_reg_t ggml_backend_hexagon_reg(void) {
 }
 
 GGML_BACKEND_DL_IMPL(ggml_backend_hexagon_reg)
+
